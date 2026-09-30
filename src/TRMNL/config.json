@@ -3,12 +3,15 @@
     "TrmnlToken": "your TRMNL API Key",
     "TrmnlApiUrl": "https://usetrmnl.com/api",
     "AppendApiPath": "true",
+    "ScreenRotation": -1,
+    "ImageRotate": 0,
+    "ClearGhosting": "true",
+    "ImageRequestQuery": "",
     "DebugToScreen": 0,
     "LogToServer": "NONE",
     "LoopMaxIteration": 0,
     "ConnectedGracePeriod": 0,
     "ImageFormat": "png",
-    "ImageRotate": 0,
     "IgnoreCurlErrors": "false",
     "WpaNetworkId": "-1"
 }

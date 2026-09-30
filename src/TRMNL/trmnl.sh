@@ -1,5 +1,6 @@
 #!/bin/sh
 export LC_ALL="en_US.UTF-8"
+export PATH="/usr/local/bin:/usr/local/niluje/bin:/bin:/usr/bin:/sbin:/usr/sbin:${PATH:-}"
 
 # Set your TRMNL Mac Address in Id:
 export trmnl_id="$(jq -r '.TrmnlId' config.json)"
@@ -42,11 +43,21 @@ export trmnl_loop_ignore_curl_errors=$(jq -r '.IgnoreCurlErrors' config.json 2>/
 # WPA Network Identifier
 export trmnl_loop_wpa_network_id=$(jq -r '.WpaNetworkId' config.json 2>/dev/null || echo "-1")
 
-# Must me Major.Minor.Revision format
-export trmnl_firmware_version=$(cat version.txt)
+# Must be Major.Minor.Revision format
+export trmnl_firmware_version=$(cat version.txt 2>/dev/null || echo "1.0.9")
 
-# Read screen orientation, normal, or reversed
-#export trmnl_screen_orientation=$(jq -r '.ScreenOrientation' config.json)
+# Optional query string appended to image_url before fetching image (e.g. mode=einkPreview)
+export trmnl_image_request_query="$(jq -r '.ImageRequestQuery // ""' config.json 2>/dev/null)"
+
+# Hardware framebuffer rotation: -1 (device portrait default), 0, 1, 2, 3
+export trmnl_screen_rotation="$(jq -r '.ScreenRotation // "-1"' config.json 2>/dev/null)"
+case "$trmnl_screen_rotation" in
+    0 | 1 | 2 | 3 | -1) ;;
+    *) trmnl_screen_rotation="-1" ;;
+esac
+
+# Full screen clear before draw to eliminate e-ink ghosting
+export trmnl_clear_ghosting="$(jq -r '.ClearGhosting // "true"' config.json 2>/dev/null)"
 
 # bmp expected (TRMNL_OG), or png (no rotation needed)
 export trmnl_image_format=$(jq -r '.ImageFormat' config.json)
@@ -217,6 +228,14 @@ if [ "${VIA_NICKEL}" = "true" ]; then
     done
     # Remove Nickel's FIFO to avoid udev & udhcpc scripts hanging on open() on it...
     rm -f /tmp/nickel-hardware-status
+
+    # Turn off frontlight / backlight to save battery while running TRMNL
+    for bl in /sys/class/backlight/*; do
+        if [ -d "$bl" ]; then
+            echo 0 > "$bl/brightness" 2>/dev/null
+            echo 1 > "$bl/bl_power" 2>/dev/null
+        fi
+    done
 fi
 
 # check whether PLATFORM & PRODUCT have a value assigned by rcS

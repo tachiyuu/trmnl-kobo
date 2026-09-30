@@ -141,8 +141,8 @@ function ErrorOnCurl(){
     fi
 
     ./bin/fbink/fbdepth -r 0 >>/tmp/debug.log 2>&1
-    ./bin/fbink/fbink -q -g file=./bin/error.png,valign=CENTER,halign=CENTER,h=-2,w=0 -c -f >>/tmp/debug.log 2>&1
-    ./bin/fbink/fbink -m -y 5 "Retrieve TRMNL Display info failed ($curl_status)" >>/tmp/debug.log 2>&1
+    ./bin/fbink/fbink -q -g file=./bin/error.png,valign=CENTER,halign=CENTER,h=-2,w=0 -c -f -w >>/tmp/debug.log 2>&1
+    ./bin/fbink/fbink -m -y 5 "Retrieve TRMNL Display info failed ($curl_status)" -w >>/tmp/debug.log 2>&1
     ./bin/fbink/fbdepth -r -1 >>/tmp/debug.log 2>&1
 
     failures=$(cat "$FAILURE_COUNT_FILE" 2>/dev/null)
@@ -188,18 +188,28 @@ esac
 # (exported so logToServer.sh, which runs as a grandchild, can report it too)
 export batteryCapacity
 if [ -d /sys/class/power_supply/mc13892_bat ]; then
-  # Set variables from the second possible path
-  batteryCapacity=$(cat /sys/class/power_supply/mc13892_bat/capacity)
-  batteryStatus=$(cat /sys/class/power_supply/mc13892_bat/status)
+  batteryCapacity=$(cat /sys/class/power_supply/mc13892_bat/capacity 2>/dev/null)
+  batteryStatus=$(cat /sys/class/power_supply/mc13892_bat/status 2>/dev/null)
+elif [ -d /sys/class/power_supply/bd71827_bat ]; then
+  batteryCapacity=$(cat /sys/class/power_supply/bd71827_bat/capacity 2>/dev/null)
+  batteryStatus=$(cat /sys/class/power_supply/bd71827_bat/status 2>/dev/null)
 elif [ -d /sys/class/power_supply/battery ]; then
-  # Set variables from the first possible path
-  batteryCapacity=$(cat /sys/class/power_supply/battery/capacity)
-  batteryStatus=$(cat /sys/class/power_supply/battery/status)
+  batteryCapacity=$(cat /sys/class/power_supply/battery/capacity 2>/dev/null)
+  batteryStatus=$(cat /sys/class/power_supply/battery/status 2>/dev/null)
 else
-  # Handle the case where neither directory is found
-  batteryCapacity=50
-  batteryStatus="N/A"
-  ./scripts/log.sh "Error: Could not find battery information." "DEBUG"
+  # Generic search across any power_supply directory
+  for bat in /sys/class/power_supply/*; do
+    if [ -f "$bat/capacity" ]; then
+      batteryCapacity=$(cat "$bat/capacity" 2>/dev/null)
+      batteryStatus=$(cat "$bat/status" 2>/dev/null)
+      break
+    fi
+  done
+  if [ -z "$batteryCapacity" ]; then
+    batteryCapacity=50
+    batteryStatus="N/A"
+    ./scripts/log.sh "Error: Could not find battery information." "DEBUG"
+  fi
 fi
 
 # Battery-Charging is a 0/1 boolean. power_supply status is one of Charging,
@@ -234,29 +244,49 @@ if [ $curl_status -ne 0 ]; then
     ErrorOnCurl
 else
     image_url=$(jq -r '.image_url' /tmp/trmnl.json)
+    image_fetch_url="$image_url"
+    if [ -n "${trmnl_image_request_query:-}" ]; then
+        normalized_query="${trmnl_image_request_query#\?}"
+        normalized_query="${normalized_query#&}"
+        if [ -n "$normalized_query" ]; then
+            case "$image_fetch_url" in
+                *\?*) image_fetch_url="${image_fetch_url}&${normalized_query}" ;;
+                *)    image_fetch_url="${image_fetch_url}?${normalized_query}" ;;
+            esac
+        fi
+    fi
+
     # Longer ceiling than the display request, the image is much bigger
     curl -L --fail --connect-timeout 15 --max-time 60 \
-        -o /tmp/trmnl.$trmnl_image_format "${image_url}" >>/tmp/debug.log 2>&1
+        -o /tmp/trmnl.$trmnl_image_format "${image_fetch_url}" >>/tmp/debug.log 2>&1
     curl_status=$?
-    ./scripts/log.sh "TRMNL fetch image from ${image_url} returned ${curl_status}" "DEBUG"
+    ./scripts/log.sh "TRMNL fetch image from ${image_fetch_url} (base: ${image_url}) returned ${curl_status}" "DEBUG"
     if [ $curl_status -ne 0 ]; then
         ErrorOnCurl
     else
-        # This panel has no hardware rotation of its own; a server intentionally
-        # composing in the other orientation (e.g. a landscape dashboard design
-        # on a portrait-only panel) needs the raster itself turned, not just
-        # scaled to fit, or it displays as a small, sideways inset.
-        if [ "$trmnl_image_rotate" -ne 0 ]; then
+        # Raster rotation via ImageMagick convert (for panels with no hardware rotation e.g. Clara HD)
+        if [ "${trmnl_image_rotate:-0}" -ne 0 ]; then
             convert /tmp/trmnl.$trmnl_image_format -rotate "$trmnl_image_rotate" /tmp/trmnl.$trmnl_image_format >>/tmp/debug.log 2>&1
             ./scripts/log.sh "Rotated image ${trmnl_image_rotate} degrees (convert exit $?)" "DEBUG"
         fi
 
-        # With png image is already in portrait, no need to rotate, with bmp/legacy, rotation is needed, it here that we should support reverse orientation
-        if [ "$trmnl_image_format" = "bmp" ]; then
-            # Rotation -r 0 break BMP rendering, rotate it 180 more to go from portrait to landscape inverted
-            ./bin/fbink/fbdepth -r 2 >>/tmp/debug.log 2>&1
+        # Hardware framebuffer rotation
+        # ScreenRotation: -1 (default portrait), 0, 1 (landscape), 2 (inverted portrait), 3 (inverted landscape)
+        rota="$trmnl_screen_rotation"
+        if [ "$rota" = "-1" ] && [ "$trmnl_image_format" = "bmp" ]; then
+            rota="2"
         fi
-        ./bin/fbink/fbink -g file=/tmp/trmnl.$trmnl_image_format,valign=CENTER,halign=CENTER,h=-2,w=0 -c -f >>/tmp/debug.log 2>&1
+        if [ -n "$rota" ] && [ "$rota" != "-1" ]; then
+            ./bin/fbink/fbdepth -r "$rota" >>/tmp/debug.log 2>&1
+        fi
+
+        # White flash / clear to prevent ghosting
+        if [ "$trmnl_clear_ghosting" = "true" ]; then
+            ./bin/fbink/fbink -k -w -c -f >>/tmp/debug.log 2>&1
+        fi
+
+        # Draw the image. -w waits for EPDC update to complete, preventing cutoffs or tearing
+        ./bin/fbink/fbink -g file=/tmp/trmnl.$trmnl_image_format,valign=CENTER,halign=CENTER,h=-2,w=0 -c -f -w >>/tmp/debug.log 2>&1
         fbink_status=$?
         image_bytes=$(wc -c < /tmp/trmnl.$trmnl_image_format 2>/dev/null)
         if [ $fbink_status -eq 0 ]; then
@@ -265,7 +295,7 @@ else
             ./scripts/log.sh "fbink failed on ${trmnl_image_format} image of ${image_bytes} bytes (${fbink_status})" "WARN"
         fi
 
-        # rotate back to portrait mode
+        # rotate back to default portrait mode
         ./bin/fbink/fbdepth -r -1 >>/tmp/debug.log 2>&1
 
         refresh_rate=$(SaneSeconds "$(jq -r '.refresh_rate' /tmp/trmnl.json)" $DEFAULT_REFRESH)

@@ -63,36 +63,53 @@ Here are the steps to get the TRMNL app working on your Kobo (show hidden folder
 - Edit **config.json** located in **.adds/TRMNL** to setup:
   - **TrmnlId**: Device Id/Mac address
   - **TrmnlToken**: Device token/API key
-  - **TrmnlApiUrl**: Change this if your Bringing Your Own Server (BYOS)
+  - **TrmnlApiUrl**: Change this if you are Bringing Your Own Server (BYOS)
   - **AppendApiPath**: Defaults to `"true"`, which appends `/api` to **TrmnlApiUrl** when it does not already end with it (any trailing slash is dropped first). Leaving `/api` off a BYOS url is an easy mistake to make. Set to `"false"` if your server really does serve the API from the root.
-  - **LogToServer**: How much of the log to POST to your server's `/log` endpoint. Case-sensitive, and any unrecognised value (including omitting the setting, or a typo such as `"debug"`) silently sends nothing.
-    - `"NONE"`: send nothing. This is the effective default.
-    - `"WARN"`: send only the warnings, such as failing to connect to the wifi or a failed suspend.
-    - `"DEBUG"`: send every log line. That is one HTTP request per line, a couple of dozen per refresh, each holding the wifi up a little longer, so prefer it for troubleshooting over everyday use.
-  - **LoopMaxIteration**: Set to 0 to run indifinitely (for initial setup/troubeleshooting, pick a small number, so that the KOBO automatically restart)
-  - **ConnectedGracePeriod**: Extra seconds to wait for the wifi to obtain an IP, on top of the 8s allowed by default. The wait ends as soon as an IP shows up, so raising this only matters if your KOBO regularly shows connection issues.
-  - **ImageFormat**: bmp to behave like TRMNL OG, png, if you configured your device to something else (Kobo Libra, Kindle PW 7th gen for Clara HD).
-    - Note: DPI might be too big, below Kindle PW 7th gen for Clara HD: 
-    - ![Capture](./doc/img/nottrmnlogsupport.png)
-    - Note: If using TERMINUS and PNG media/type, please [see guide to fix orientation](https://github.com/usetrmnl/trmnl-kobo/issues/17#issuecomment-3237420484), thanks [z0rzi](https://github.com/z0rzi)
-  - **ImageRotate**: Degrees to rotate the downloaded image before display: `0` (default), `90`, `180` or `270`. This panel has no hardware rotation of its own, so if your server intentionally composes in the other orientation (e.g. a landscape-designed dashboard on a portrait-only panel like Clara HD) and you don’t want Tesserae/Terminus reflowing the design to portrait, rotate the raster here instead. Requires `convert` (ImageMagick), bundled by Kobostuff.
-  - **IgnoreCurlErrors**: Set to `true` to ignore errors from `curl` commands during the TRMNL loop and retry in the next iteration. This will continue showing outdated screen rather than the error screen. Default is `false`. This is helpful for dodgy network connections.
-  - **WpaNetworkId**: Specifies the WPA network identifier to use. Default is `-1`, which means no specific network ID is set.
-    - You can get the id by ssh'ing into Kobo and running `wpa_cli list_networks`, using ID of the network you want. 
-```
+  - **ScreenRotation**: Hardware framebuffer rotation: `-1` (default portrait), `0`, `1` (landscape, 90°), `2` (inverted portrait, 180°), `3` (landscape, 270°). For **Kobo Libra 2** placed horizontally: use `3` (buttons on the right side) or `1` (buttons on the left side).
+  - **ImageRotate**: Raster rotation in degrees before display: `0` (default), `90`, `180` or `270`. Useful for panels without hardware rotation (e.g. Clara HD). Requires `convert` (ImageMagick bundled by Kobostuff).
+  - **ClearGhosting**: Set to `"true"` (default) to perform a full flash screen clear before rendering each new dashboard, preventing e-ink ghosting.
+  - **ImageRequestQuery**: Optional raw query parameters appended to image URLs (e.g., `mode=einkPreview` for Inker / BYOS).
+  - **LogToServer**: How much of the log to POST to your server's `/log` endpoint (`"NONE"`, `"WARN"`, `"DEBUG"`).
+  - **LoopMaxIteration**: Set to 0 to run indefinitely (for initial setup/troubleshooting, pick a small number so that the KOBO automatically restarts).
+  - **ConnectedGracePeriod**: Extra seconds to wait for the wifi to obtain an IP (default `0`). On Kobo Libra 2 or slower Wi-Fi networks, set this to `10` or `15`.
+  - **ImageFormat**: `"png"` (recommended) or `"bmp"`.
+  - **IgnoreCurlErrors**: Set to `"true"` to ignore transient curl errors and retry on next loop without showing the error screen. Default is `"false"`.
+  - **WpaNetworkId**: Specifies the WPA network identifier to use. Default is `"-1"`.
+
+```json
 {
     "TrmnlId": "your TRMNL Mac Address",
     "TrmnlToken": "your TRMNL API Key",
     "TrmnlApiUrl": "https://usetrmnl.com/api",
     "AppendApiPath": "true",
+    "ScreenRotation": -1,
+    "ImageRotate": 0,
+    "ClearGhosting": "true",
+    "ImageRequestQuery": "",
     "DebugToScreen": 0,
     "LogToServer": "NONE",
     "LoopMaxIteration": 0,
     "ConnectedGracePeriod": 0,
-    "ImageFormat": "bmp",
-    "ImageRotate": 0
+    "ImageFormat": "png",
+    "IgnoreCurlErrors": "false",
+    "WpaNetworkId": "-1"
 }
-````
+```
+
+### Recommended Configuration for Kobo Libra 2
+For **Kobo Libra 2** resting horizontally (landscape mode) on a desk or stand:
+```json
+{
+    "TrmnlId": "AA:BB:CC:DD:EE:FF",
+    "TrmnlToken": "your_api_key",
+    "TrmnlApiUrl": "https://usetrmnl.com/api",
+    "ScreenRotation": 3,
+    "ConnectedGracePeriod": 10,
+    "ClearGhosting": "true",
+    "ImageFormat": "png"
+}
+```
+*Note: If your buttons are on the left side, change `"ScreenRotation": 3` to `"ScreenRotation": 1`.*
 
 - Copy the file TRMNL.ini to **.adds/nm** folder (to create a menu entry) 
   - (Located in src/nm/TRMNL.ini in this repo)
