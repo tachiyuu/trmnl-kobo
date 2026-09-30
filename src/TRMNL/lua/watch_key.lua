@@ -50,7 +50,7 @@ local function next_key_event()
         local nread = C.read(fd, event, event_size)
         if nread == event_size then
             errors = 0
-            if event[0].type == EV_KEY and event[0].code == key_code then
+            if event[0].type == EV_KEY and (key_code == 0 or event[0].code == key_code) then
                 return event[0].value, event[0].tv_sec * 1000 + event[0].tv_usec / 1000
             end
         else

@@ -16,14 +16,21 @@ KEY_POWER=116
 # comfortably over it, well short of the firmware's own hold-to-power-off.
 POWER_HOLD_MS=1500
 
-# input_scan prints its matches as CSV, take the first
+# 1. Check for dedicated home button
 device=$(./bin/fbink/input_scan -q -p -m home -x touchscreen 2>/dev/null | cut -d, -f1)
 if [ -n "$device" ] && [ -e "$device" ]; then
     ./scripts/log.sh "Watching ${device} for the home button" "DEBUG"
     exec ./bin/luajit lua/watch_key.lua "$device" "$KEY_HOME" "$FLAG"
 fi
 
-# No dedicated home button (e.g. Clara HD): fall back to the power button,
+# 2. Check for page-turn buttons (e.g. Kobo Libra 2, Forma, Libra H2O)
+device=$(./bin/fbink/input_scan -q -p -m pagination -x touchscreen 2>/dev/null | cut -d, -f1)
+if [ -n "$device" ] && [ -e "$device" ]; then
+    ./scripts/log.sh "Watching ${device} for page-turn buttons to exit loop" "DEBUG"
+    exec ./bin/luajit lua/watch_key.lua "$device" "0" "$FLAG" "0"
+fi
+
+# 3. No home or page buttons (e.g. Clara HD): fall back to the power button,
 # which every scheduled wake also presses, so a plain press can't mean stop.
 # Holding it does, since a scheduled wake never holds it.
 device=$(./bin/fbink/input_scan -q -p -m power -x touchscreen 2>/dev/null | cut -d, -f1)
